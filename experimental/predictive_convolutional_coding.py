@@ -14,9 +14,18 @@ import datetime
 
 (x_train, y_train), (x_test, y_test) = mnist('./data')
 
+
 graph = tf.Graph()
 
 convolutional_layer_specs = [
+    {
+        'filters': [2, 2, 1, 1],
+        'strides': [1, 1, 1, 1]
+    },
+    {
+        'filters': [2, 2, 1, 1],
+        'strides': [1, 1, 1, 1]
+    },
     {
         'filters': [2, 2, 1, 1],
         'strides': [1, 1, 1, 1]
@@ -138,11 +147,14 @@ class ConvolutionalPredictiveNetwork():
                                                     int(self.forward_layers[-1].shape[3])])
 
         with tf.name_scope('updating_forward_conv'):
-            self.forward_layers[-1] = tf.nn.relu(
+            self.forward_layers[-1] = tf.reshape(tf.nn.relu(
                 (tf.constant(1.0) - tf.constant(2.0) * tf.Variable(tf.constant(0.5)) / self.variance(self.forward_layers[-1])) *
                 self.forward_layers[-1] + tf.Variable(tf.constant(0.5)) / self.variance(
                     self.forward_layers[-1]) * output_prediction_reshape
-            )
+            ), [self.batch_size,
+                self.forward_layers[-1].get_shape().as_list()[1],
+                self.forward_layers[-1].get_shape().as_list()[2],
+                self.forward_layers[-1].get_shape().as_list()[3]])
 
         for layer_idx in range(len(self.forward_layers) - 1, 0, -1):
 
@@ -206,13 +218,16 @@ class ConvolutionalPredictiveNetwork():
 
             with tf.name_scope('updating_forward_conv'):
                 self.forward_layers[layer_idx] = \
-                    tf.nn.relu(
+                    tf.reshape(tf.nn.relu(
                         self.forward_layers[layer_idx] +
                         (tf.constant(2.0) * tf.Variable(tf.constant(1.0)) / self.variance(self.forward_layers[layer_idx])) *
                         tf.nn.conv2d(error, self.forward_filters[layer_idx],
                                      strides=self.layer_specs[layer_idx]['strides'],
                                      padding='VALID')
-                    )
+                    ), [self.batch_size,
+                        self.forward_layers[layer_idx].get_shape().as_list()[1],
+                        self.forward_layers[layer_idx].get_shape().as_list()[2],
+                        self.forward_layers[layer_idx].get_shape().as_list()[3]])
 
         with tf.name_scope('output_forward_dense'):
             conv_output = tf.reshape(self.forward_layers[-1], [-1, self.conv_output_size])
@@ -239,6 +254,7 @@ class ConvolutionalPredictiveNetwork():
             )
 
         for layer_idx in range(len(self.forward_layers) - 1, 0, -1):
+
             with tf.name_scope('updating_feedback_conv'):
                 self.feedback_layers[len(self.forward_layers) - layer_idx - 1] = \
                     tf.nn.conv2d_transpose(self.forward_layers[layer_idx],
@@ -250,12 +266,15 @@ class ConvolutionalPredictiveNetwork():
                                            strides=self.layer_specs[layer_idx]['strides'], padding='VALID')
 
             with tf.name_scope('updating_forward_conv'):
-                self.forward_layers[layer_idx - 1] = tf.nn.relu(
+                self.forward_layers[layer_idx - 1] = tf.reshape(tf.nn.relu(
                     (tf.constant(1.0) - tf.constant(2.0) * tf.Variable(tf.constant(0.5)) / self.variance(
                         self.forward_layers[layer_idx - 1])) *
                     self.forward_layers[layer_idx - 1] + tf.Variable(tf.constant(0.5)) / self.variance(
                         self.forward_layers[layer_idx - 1]) * self.feedback_layers[len(self.forward_layers) - layer_idx - 1]
-                )
+                ), [self.batch_size,
+                        self.forward_layers[layer_idx - 1].get_shape().as_list()[1],
+                        self.forward_layers[layer_idx - 1].get_shape().as_list()[2],
+                        self.forward_layers[layer_idx - 1].get_shape().as_list()[3]])
 
         with tf.name_scope('output_feedback_conv'):
             self.feedback_layers[-1] = \
@@ -282,6 +301,10 @@ with graph.as_default():
     predNet.update_forward_network()
     predNet.update_feedback_network()
     predNet.update_forward_network()
+    predNet.update_feedback_network()
+    predNet.update_forward_network()
+    predNet.update_feedback_network()
+    predNet.update_forward_network()
 
     loss = tf.nn.softmax_cross_entropy_with_logits(labels=target_label, logits=predNet.output_layer)
 
@@ -298,7 +321,7 @@ with tf.Session(graph=graph) as sess:
     accuracy_prev = 0.0
     accuracy_flag = 0
 
-    for epoch in range(150):
+    for epoch in range(250):
 
         for batch in range(0, 60000, 30):
             sess.run([optimizer], feed_dict={
@@ -335,53 +358,54 @@ with tf.Session(graph=graph) as sess:
             accuracy_prev = accuracy
             accuracy_flag = 0
 
-        if (epoch + 1) % 25 == 0:
-            import matplotlib.pyplot as plt
+        if epoch % 25 == 0:
 
-            plt.imshow(x_train[0].reshape(28, 28))
-            plt.show()
+            import matplotlib.pyplot as plt
 
             plt.imshow(sess.run([picture_prediction], feed_dict={
                 picture: x_train[0].reshape(1, 784),
             })[0].reshape(28, 28))
-            plt.show()
-
-            plt.imshow(x_train[1].reshape(28, 28))
-            plt.show()
+            plt.savefig('./pictures/picture_0_prediction_' + str(epoch) + '.png')
 
             plt.imshow(sess.run([picture_prediction], feed_dict={
                 picture: x_train[1].reshape(1, 784),
             })[0].reshape(28, 28))
-            plt.show()
-
-            plt.imshow(x_train[2].reshape(28, 28))
-            plt.show()
+            plt.savefig('./pictures/picture_1_prediction_' + str(epoch) + '.png')
 
             plt.imshow(sess.run([picture_prediction], feed_dict={
                 picture: x_train[2].reshape(1, 784),
             })[0].reshape(28, 28))
-            plt.show()
-
-            plt.imshow(x_train[3].reshape(28, 28))
-            plt.show()
+            plt.savefig('./pictures/picture_2_prediction_' + str(epoch) + '.png')
 
             plt.imshow(sess.run([picture_prediction], feed_dict={
                 picture: x_train[3].reshape(1, 784),
             })[0].reshape(28, 28))
-            plt.show()
-
-            plt.imshow(x_train[4].reshape(28, 28))
-            plt.show()
+            plt.savefig('./pictures/picture_3_prediction_' + str(epoch) + '.png')
 
             plt.imshow(sess.run([picture_prediction], feed_dict={
                 picture: x_train[4].reshape(1, 784),
             })[0].reshape(28, 28))
-            plt.show()
-
-            plt.imshow(x_train[5].reshape(28, 28))
-            plt.show()
+            plt.savefig('./pictures/picture_4_prediction_' + str(epoch) + '.png')
 
             plt.imshow(sess.run([picture_prediction], feed_dict={
                 picture: x_train[5].reshape(1, 784),
             })[0].reshape(28, 28))
-            plt.show()
+            plt.savefig('./pictures/picture_5_prediction_' + str(epoch) + '.png')
+
+plt.imshow(x_train[0].reshape(28, 28))
+plt.savefig('./pictures/picture_0.png')
+
+plt.imshow(x_train[1].reshape(28, 28))
+plt.savefig('./pictures/picture_1.png')
+
+plt.imshow(x_train[2].reshape(28, 28))
+plt.savefig('./pictures/picture_2.png')
+
+plt.imshow(x_train[3].reshape(28, 28))
+plt.savefig('./pictures/picture_3.png')
+
+plt.imshow(x_train[4].reshape(28, 28))
+plt.savefig('./pictures/picture_4.png')
+
+plt.imshow(x_train[5].reshape(28, 28))
+plt.savefig('./pictures/picture_5.png')
